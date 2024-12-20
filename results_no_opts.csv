@@ -1,0 +1,5 @@
+write_back,physical_disk_cache,read_ahead_controller,single_chuck,pattern,operation,avg_latency,avg_throughput
+False,False,False,False,rand,write,6628197.6629296,0.117868
+False,False,False,False,rand,read,2741260.7241406003,0.284997
+False,False,False,False,seq,write,6930105.403935599,0.112733
+False,False,False,False,seq,read,89634.06911140001,8.715994

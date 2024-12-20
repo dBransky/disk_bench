@@ -1,0 +1,14 @@
+write_back,physical_disk_cache,read_ahead_controller,single_chuck,pattern,operation,avg_latency,avg_throughput
+True,True,True,True,rand,read,409329751.4,9325.550979399999
+True,True,True,True,rand,write,604358328.6,14584.3511008
+True,True,True,True,seq,read,694651628.8,26044.647911599997
+True,True,True,True,seq,write,887880642.6,31355.348504199996
+True,True,True,False,rand,read,888370549.514563,31363.452246399993
+True,True,True,False,rand,write,888398373.2243078,31503.882210599986
+True,True,True,False,seq,read,888420378.6395857,31681.39673899999
+True,True,True,False,seq,write,888442307.6339362,31859.56376759999
+True,True,False,True,rand,read,1010883274.4339361,41001.07160599999
+True,True,False,True,rand,write,1218436855.033936,45964.295137799985
+True,True,False,True,seq,read,1322366187.6339362,56164.87770139998
+True,True,False,True,seq,write,1532799487.6339362,61036.51142839999
+True,True,False,False,rand,read,1533504657.9377587,61042.10643099999
