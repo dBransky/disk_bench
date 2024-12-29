@@ -2,37 +2,50 @@ import subprocess
 import csv
 import re
 import matplotlib.pyplot as plt
-
+import os
 # Function to run io_bench and collect output
 def run_io_bench(filesize):
-    result = subprocess.run(['./io_bench', '-i',f'{(filesize/4096)}','-n', f'/tmp/tempfile.{filesize}','-o','write'], capture_output=True, text=True)
+    subprocess.run(['./io_bench', '-i','262144','-n', '/scratch/tmp/tempfile.1073741824'], capture_output=True, text=True)
+    os.system('sudo sync')
+    os.system('echo 3 | sudo tee /proc/sys/vm/drop_caches')
+    # os.system(f'dd if=/dev/urandom of=/scratch/tmp/tempfile.{filesize} bs={filesize} count=1 oflag=direct')
+    result = subprocess.run(['./io_bench', '-i',f'{50*(filesize/4096)}','-n', f'/scratch/tmp/tempfile.{filesize}','-o','read','-p','rand'], capture_output=True, text=True)
     output = result.stdout.strip()
     print(output)
+    warmup_throughput = float(re.search(r'warm up throughput:\s+([\d.]+)\s+MB/s', output).group(1))
     avg_throughput = float(re.search(r'total throughput:\s+([\d.]+)\s+MB/s', output).group(1))
+    print(f'warmup throughput: {warmup_throughput}')
     print(f'Average throughput: {avg_throughput}')
-    return avg_throughput
+    return warmup_throughput,avg_throughput
 
 data = []
 basic_file_size = 4096
 for exp in range(0,19):
     file_size = basic_file_size * 2**exp
     total_throughput = 0
+    total_warmup = 0
     execs = 1
     for i in range(execs):
         print(f'Running io_bench for file size {file_size} for the {i+1}th time')
-        output = run_io_bench(file_size)
-        if output:
-            total_throughput += output
+        warmup,avg = run_io_bench(file_size)
+        # while(True):
+        #     if warmup < 10:
+        #         break
+        if warmup and avg:
+            total_throughput += avg
+            total_warmup += warmup
     throughput =  total_throughput / execs
+    warmup = total_warmup / execs
+    print(f'Average warmup for file size {file_size}: {warmup}')
     print(f'Average throughput for file size {file_size}: {throughput}')
-    data.append([file_size, throughput])
+    data.append([file_size, warmup,throughput])
 # Write data to CSV
-    csv_file = 'io_bench_results_seq_write.csv'
+    csv_file = 'io_bench_results_rand_read.csv'
     with open(csv_file, 'a', newline='') as file:
-        file.write(f'{file_size},{throughput}\n')
+        file.write(f'{file_size},{warmup},{throughput}\n')
 
 # Read data from CSV and plot
-csv_file = 'io_bench_results_seq_write.csv'
+csv_file = 'io_bench_results_rand_read.csv'
 filesizes = []
 throughputs = []
 with open(csv_file, 'r') as file:

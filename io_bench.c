@@ -22,7 +22,7 @@ void permutate(int* arr, int size){
 }
 char* create_temp_file(unsigned long size) {
     char *filename = "/tmp/io_bench_file";
-    int fd = open(filename, O_RDWR | O_CREAT, 0777);
+    int fd = open(filename, O_RDWR | O_CREAT, 0666);
     if (fd < 0) {
         perror("Failed to open temporary file");
         exit(1);
@@ -59,19 +59,31 @@ void fill_random_buffer(char *buffer, int size) {
         buffer[i] = rand() % 256;
     }
 }
-void run_benchmark(int iterations, int* permuation, unsigned long iosize, int fd,int o_write, char *buffer) {
+double run_benchmark(int iterations, int* permuation, unsigned long iosize, int fd,int o_write, char *buffer,int indices) {
     int r_w=0;
+    struct timespec first_iter_s, first_iter_e;
+    double warmup;
+    clock_gettime(CLOCK_MONOTONIC, &first_iter_s);
     for (int i = 0; i < iterations; i++) {
         int index = permuation[i];
-        if(o_write)
+        if(o_write){
             r_w = pwrite(fd, buffer, iosize, index*iosize);
-        else 
+        }
+        else
+        { 
             r_w = pread(fd, buffer, iosize, index*iosize);
-        if (r_w != iosize) {
+        }
+        if (r_w < iosize*0.99) {
             perror("Failed to read/write from/to file");
+            printf("read write: %d\n", r_w);
             exit(1);
         }
+        if (i == (indices-1)) {
+            clock_gettime(CLOCK_MONOTONIC, &first_iter_e);
+            warmup = (first_iter_e.tv_sec - first_iter_s.tv_sec) * 1e9 + (first_iter_e.tv_nsec - first_iter_s.tv_nsec);
+        }
     }
+    return warmup;
 }
 
 void print_usage() {
@@ -136,10 +148,6 @@ int main(int argc, char *argv[]) {
         }
     }
     // Placeholder for the actual benchmarking logic
-    if (filesize % iosize != 0) {
-        printf("File size must be a multiple of IO size\n");
-        return 1;
-    }
     printf("Running IO benchmark with the following parameters:\n");
     printf("Iterations: %d\n", iterations);
     printf("Pattern: %s\n", pattern);
@@ -160,6 +168,10 @@ int main(int argc, char *argv[]) {
     printf("File Size: %ld bytes\n", filesize);
     int open_flags = O_SYNC | O_DIRECT;
     int o_write=0;
+    if (filesize % iosize != 0) {
+        printf("File size must be a multiple of IO size\n");
+        return 1;
+    }
     if(strcmp(operation, "write") == 0) // move this out
         o_write=1;
     int* permuatation = malloc(sizeof(int)*iterations);
@@ -170,6 +182,7 @@ int main(int argc, char *argv[]) {
         permutate(permuatation, iterations);
     }
     char* buffer = mmap(NULL, iosize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    // check buffer is aligned using posix_memalign 
     if (o_write){
         open_flags |= O_WRONLY;
         fill_random_buffer(buffer, iosize);
@@ -179,14 +192,16 @@ int main(int argc, char *argv[]) {
         perror("Failed to allocate buffer using mmap");
         exit(1);
     }
+    
     printf("==================================== <running benchmark> ====================================\n");
     struct timespec start, end;
     clock_gettime(CLOCK_MONOTONIC, &start);
-    run_benchmark(iterations, permuatation, iosize, fd, o_write, buffer);
+    double warmup = run_benchmark(iterations, permuatation, iosize, fd, o_write, buffer, filesize/iosize);
     clock_gettime(CLOCK_MONOTONIC, &end);
     if(delete_file){
         remove(filename);
     }
+    printf("warm up throughput: %f MB/s\n", ((filesize)/1e6)/((warmup)/1e9));
     printf("total throughput: %f MB/s\n", ((iosize*iterations)/1e6)/((end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec)/1e9));
     return 0;
 }
