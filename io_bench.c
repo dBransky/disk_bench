@@ -59,26 +59,29 @@ void fill_random_buffer(char *buffer, int size) {
         buffer[i] = rand() % 256;
     }
 }
-double run_benchmark(int iterations, int* permuation, unsigned long iosize, int fd,int o_write, char *buffer,int indices) {
+double run_benchmark(int* permuation, unsigned long iosize, int fd,int o_write, char *buffer,int indices, int epochs) {
     int r_w=0;
     struct timespec first_iter_s, first_iter_e;
     double warmup;
     clock_gettime(CLOCK_MONOTONIC, &first_iter_s);
-    for (int i = 0; i < iterations; i++) {
-        int index = permuation[i];
-        if(o_write){
-            r_w = pwrite(fd, buffer, iosize, index*iosize);
+    for (int i = 0; i < epochs; i++) {
+        for (int j =0; j<indices; j++){
+            int index = permuation[j];
+            if(o_write){
+                r_w = pwrite(fd, buffer, iosize, index*iosize);
+            }
+            else
+            { 
+                r_w = pread(fd, buffer, iosize, index*iosize);
+            }
+            if (r_w < iosize*0.99) {
+                perror("Failed to read/write from/to file");
+                printf("read write: %d\n", r_w);
+                exit(1);
+            }
+            // printf("%d\n",index);
         }
-        else
-        { 
-            r_w = pread(fd, buffer, iosize, index*iosize);
-        }
-        if (r_w < iosize*0.99) {
-            perror("Failed to read/write from/to file");
-            printf("read write: %d\n", r_w);
-            exit(1);
-        }
-        if (i == (indices-1)) {
+        if (i==0) {
             clock_gettime(CLOCK_MONOTONIC, &first_iter_e);
             warmup = (first_iter_e.tv_sec - first_iter_s.tv_sec) * 1e9 + (first_iter_e.tv_nsec - first_iter_s.tv_nsec);
         }
@@ -98,7 +101,7 @@ void print_usage() {
     printf("  -h, --help                Print this help message\n");
 }
 int main(int argc, char *argv[]) {
-    int iterations = 1000;
+    int iterations = 256;
     char *pattern = "seq";
     unsigned long iosize = 4096;
     unsigned long filesize = 1048576;
@@ -166,26 +169,39 @@ int main(int argc, char *argv[]) {
     stat(filename, &st);
     filesize = st.st_size;
     printf("File Size: %ld bytes\n", filesize);
-    int open_flags = O_SYNC | O_DIRECT;
+    int open_flags = 0;
     int o_write=0;
+    int indices = filesize/iosize;
     if (filesize % iosize != 0) {
         printf("File size must be a multiple of IO size\n");
         return 1;
     }
+    if(iterations%indices!=0){
+        printf("iternation %d must be a multiple of indices %d\n",iterations,indices);
+        return 1;
+    }
+    int epochs = iterations/indices;
     if(strcmp(operation, "write") == 0) // move this out
         o_write=1;
-    int* permuatation = malloc(sizeof(int)*iterations);
-    for(int i=0;i<iterations;i++){
-        permuatation[i]=i%(filesize/iosize);
+    int* permuatation = malloc(sizeof(int)*(indices));
+    for(int i=0;i<indices;i++){
+        permuatation[i]=i;
     }
     if(strcmp(pattern, "rand") == 0){ // move this out
-        permutate(permuatation, iterations);
+        permutate(permuatation, indices);
     }
-    char* buffer = mmap(NULL, iosize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    void* buffer = mmap(NULL, iosize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     // check buffer is aligned using posix_memalign 
+    if (posix_memalign(&buffer, iosize, iosize) != 0) {
+        perror("posix_memalign failed");
+        exit(1);
+    }
     if (o_write){
         open_flags |= O_WRONLY;
         fill_random_buffer(buffer, iosize);
+    }
+    else {
+        open_flags |= O_RDONLY;
     }
     int fd = open(filename, open_flags);
     if (buffer == MAP_FAILED) {
@@ -196,7 +212,7 @@ int main(int argc, char *argv[]) {
     printf("==================================== <running benchmark> ====================================\n");
     struct timespec start, end;
     clock_gettime(CLOCK_MONOTONIC, &start);
-    double warmup = run_benchmark(iterations, permuatation, iosize, fd, o_write, buffer, filesize/iosize);
+    double warmup = run_benchmark(permuatation, iosize, fd, o_write, buffer, indices, epochs);
     clock_gettime(CLOCK_MONOTONIC, &end);
     if(delete_file){
         remove(filename);
